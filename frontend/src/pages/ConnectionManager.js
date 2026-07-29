@@ -1,0 +1,837 @@
+import { 
+    AddIcon,
+    CheckIcon, 
+    CloseIcon, 
+    DeleteIcon, 
+    EditIcon, 
+    ViewIcon,
+    LinkIcon,
+    InfoOutlineIcon,
+    WarningIcon,
+    RepeatIcon
+} from '@chakra-ui/icons';
+import {
+    AlertDialog,
+    AlertDialogBody,
+    AlertDialogContent,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogOverlay,
+    Box,
+    Button,
+    FormControl,
+    FormLabel,
+    FormHelperText,
+    HStack,
+    Heading,
+    Input,
+    InputGroup,
+    InputLeftElement,
+    Modal,
+    ModalBody,
+    ModalCloseButton,
+    ModalContent,
+    ModalFooter,
+    ModalHeader,
+    ModalOverlay,
+    Spinner,
+    Table,
+    Tbody,
+    Td,
+    Text,
+    Th,
+    Thead,
+    Tr,
+    VStack,
+    useColorModeValue,
+    useDisclosure,
+    useToast,
+    Badge,
+    Card,
+    CardBody,
+    CardHeader,
+    IconButton,
+    Tooltip,
+    Divider,
+    SimpleGrid,
+    Stat,
+    StatLabel,
+    StatNumber,
+    StatHelpText,
+    Icon,
+    Flex,
+    Center,
+    Grid,
+    GridItem,
+    Container,
+    Stack,
+    Fade,
+    ScaleFade,
+    useBreakpointValue,
+    Collapse,
+    InputRightElement,
+    Progress,
+    Textarea
+} from '@chakra-ui/react';
+import React, { useCallback, useEffect, useState } from 'react';
+import ReactJson from 'react-json-view';
+import { FiDatabase, FiServer, FiLink, FiActivity, FiLock, FiUnlock, FiCopy } from 'react-icons/fi';
+
+import api from './api';
+
+
+const ConnectionManager = () => {
+    const [connections, setConnections] = useState([]);
+    const [newConnection, setNewConnection] = useState({ name: '', connectionString: '', databaseName: '' });
+    const [editingConnection, setEditingConnection] = useState(null);
+    const [isLoading, setIsLoading] = useState(false);
+    const [testingConnection, setTestingConnection] = useState(null);
+    const [schema, setSchema] = useState(null);
+    const [isAlertOpen, setIsAlertOpen] = useState(false);
+    const [connectionIdToDelete, setConnectionIdToDelete] = useState(null);
+    const [isFormExpanded, setIsFormExpanded] = useState(false);
+
+    const toast = useToast();
+    const bgColor = useColorModeValue('white', 'gray.800');
+    const cardBg = useColorModeValue('white', 'gray.700');
+    const borderColor = useColorModeValue('gray.200', 'gray.600');
+    const hoverBg = useColorModeValue('gray.50', 'gray.600');
+    const textColor = useColorModeValue('gray.700', 'gray.200');
+    const mutedColor = useColorModeValue('gray.500', 'gray.400');
+    const successColor = useColorModeValue('green.500', 'green.400');
+    const errorColor = useColorModeValue('red.500', 'red.400');
+    const warningColor = useColorModeValue('yellow.500', 'yellow.400');
+    const accentColor = useColorModeValue('blue.500', 'blue.400');
+    const tableBg = useColorModeValue('gray.50', 'gray.800');
+    const tableHoverBg = useColorModeValue('gray.100', 'gray.700');
+    const isMobile = useBreakpointValue({ base: true, md: false });
+    const modalSize = useBreakpointValue({ base: 'full', md: '6xl' });
+    const { isOpen: isSchemaModalOpen, onOpen: onOpenSchemaModal, onClose: onCloseSchemaModal } = useDisclosure();
+    const { isOpen: isTestModalOpen, onOpen: onOpenTestModal, onClose: onCloseTestModal } = useDisclosure();
+    const cancelRef = React.useRef();
+
+    const fetchConnections = useCallback(async () => {
+        setIsLoading(true);
+        try {
+            const response = await api.get(`/MongoConnection`);
+            setConnections(Array.isArray(response.data) ? response.data : response.data.items || []);
+        } catch (error) {
+            handleError('Error fetching connections', error);
+        }
+        setIsLoading(false);
+    }, []);
+
+    useEffect(() => {
+        fetchConnections();
+    }, [fetchConnections]);
+
+    const handleInputChange = (e) => {
+        const { name, value } = e.target;
+        if (editingConnection) {
+            setEditingConnection({ ...editingConnection, [name]: value });
+        } else {
+            setNewConnection({ ...newConnection, [name]: value });
+        }
+    };
+
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        setIsLoading(true);
+        try {
+            if (editingConnection) {
+                await api.put(`/MongoConnection/${editingConnection.id}`, editingConnection);
+                handleSuccess('Connection updated', 'The connection has been updated successfully.');
+                setEditingConnection(null);
+            } else {
+                await api.post(`/MongoConnection`, newConnection);
+                handleSuccess('Connection added', 'New connection has been added successfully.');
+                setNewConnection({ name: '', connectionString: '', databaseName: '' });
+            }
+            fetchConnections();
+        } catch (error) {
+            handleError(editingConnection ? 'Error updating connection' : 'Error adding connection', error);
+        }
+        setIsLoading(false);
+    };
+
+    const handleEdit = (connection) => {
+        setEditingConnection(connection);
+        setNewConnection({ name: '', connectionString: '', databaseName: '' });
+    };
+
+    const handleCancelEdit = () => {
+        setEditingConnection(null);
+        setNewConnection({ name: '', connectionString: '', databaseName: '' });
+    };
+
+    const handleDelete = async (id) => {
+        setIsLoading(true);
+        try {
+            await api.delete(`/MongoConnection/${id}`);
+            handleSuccess('Connection deleted', 'The connection has been removed.');
+            fetchConnections();
+        } catch (error) {
+            handleError('Error deleting connection', error);
+        }
+        setIsLoading(false);
+        setIsAlertOpen(false);
+    };
+
+    const confirmDelete = (id) => {
+        setConnectionIdToDelete(id);
+        setIsAlertOpen(true);
+    };
+
+    const handleTestConnection = async (connection) => {
+        setTestingConnection(connection);
+        onOpenTestModal();
+        try {
+            const response = await api.post(`/MongoConnection/test`, connection);
+            handleSuccess('Connection test successful', 'The connection is working correctly.');
+            // Immediately refresh connections to get updated status from database
+            await fetchConnections();
+        } catch (error) {
+            handleError('Connection test failed', error);
+            // Refresh connections even on error to update status
+            await fetchConnections();
+        } finally {
+            setTestingConnection(null);
+            onCloseTestModal();
+        }
+    };
+
+    const handleFetchSchema = async (connectionId) => {
+        setIsLoading(true);
+        try {
+            const response = await api.get(`/MongoSchema/${connectionId}`);
+            setSchema(JSON.parse(response.data.formattedSchema));
+            onOpenSchemaModal();
+        } catch (error) {
+            handleError('Error fetching schema', error);
+        }
+        setIsLoading(false);
+    };
+
+    const handleSuccess = (title, description) => {
+        toast({
+            title,
+            description,
+            status: 'success',
+            duration: 3000,
+            isClosable: true,
+            position: 'top-right',
+        });
+    };
+
+    const handleError = (title, error) => {
+        let errorMessage = 'An error occurred';
+        
+        if (error.response?.data) {
+            const errorData = error.response.data;
+            if (typeof errorData === 'string') {
+                errorMessage = errorData;
+            } else if (errorData.title) {
+                errorMessage = errorData.title;
+                if (errorData.errors) {
+                    const errorDetails = Object.entries(errorData.errors)
+                        .map(([key, value]) => `${key}: ${Array.isArray(value) ? value.join(', ') : value}`)
+                        .join('; ');
+                    if (errorDetails) {
+                        errorMessage += ` - ${errorDetails}`;
+                    }
+                }
+            } else if (errorData.message) {
+                errorMessage = errorData.message;
+            } else {
+                errorMessage = JSON.stringify(errorData);
+            }
+        } else if (error.message) {
+            errorMessage = error.message;
+        }
+        
+        toast({
+            title,
+            description: errorMessage,
+            status: 'error',
+            duration: 5000,
+            isClosable: true,
+            position: 'top-right',
+        });
+    };
+
+    return (
+        <Fade in={true}>
+            <VStack spacing={8} align="stretch">
+                {/* Header Section */}
+                <Box>
+                    <HStack justify="space-between" mb={2}>
+                        <VStack align="start" spacing={1}>
+                            <Heading 
+                                as="h1" 
+                                size="lg"
+                                bgGradient="linear(to-r, blue.400, blue.600)"
+                                bgClip="text"
+                            >
+                                Connection Manager
+                            </Heading>
+                            <Text fontSize="sm" color={mutedColor}>
+                                Manage your MongoDB database connections
+                            </Text>
+                        </VStack>
+                        <HStack>
+                            <Tooltip label="Refresh connections" placement="bottom" hasArrow>
+                                <IconButton
+                                    icon={<RepeatIcon />}
+                                    onClick={fetchConnections}
+                                    isLoading={isLoading}
+                                    variant="ghost"
+                                    aria-label="Refresh"
+                                />
+                            </Tooltip>
+                        </HStack>
+                    </HStack>
+                    <Divider />
+                </Box>
+
+                {/* Stats Overview */}
+                <SimpleGrid columns={{ base: 1, md: 3 }} spacing={4}>
+                    <Card variant="outline" size="sm">
+                        <CardBody>
+                            <Stat>
+                                <StatLabel color={mutedColor}>
+                                    <HStack spacing={2}>
+                                        <Icon as={FiDatabase} />
+                                        <Text>Total Connections</Text>
+                                    </HStack>
+                                </StatLabel>
+                                <StatNumber fontSize="2xl" color={accentColor}>
+                                    {connections.length}
+                                </StatNumber>
+                                <StatHelpText>
+                                    {connections.length > 0 ? 'Active databases' : 'No connections yet'}
+                                </StatHelpText>
+                            </Stat>
+                        </CardBody>
+                    </Card>
+                    
+                    <Card variant="outline" size="sm">
+                        <CardBody>
+                            <Stat>
+                                <StatLabel color={mutedColor}>
+                                    <HStack spacing={2}>
+                                        <Icon as={FiActivity} />
+                                        <Text>Connection Status</Text>
+                                    </HStack>
+                                </StatLabel>
+                                <StatNumber fontSize="2xl" color={successColor}>
+                                    {connections.filter(conn => conn.connectionStatus === 'success').length}
+                                </StatNumber>
+                                <StatHelpText>Successfully tested</StatHelpText>
+                            </Stat>
+                        </CardBody>
+                    </Card>
+                    
+                    <Card variant="outline" size="sm">
+                        <CardBody>
+                            <Stat>
+                                <StatLabel color={mutedColor}>
+                                    <HStack spacing={2}>
+                                        <Icon as={FiServer} />
+                                        <Text>Quick Actions</Text>
+                                    </HStack>
+                                </StatLabel>
+                                <Button
+                                    size="sm"
+                                    colorScheme="blue"
+                                    leftIcon={<AddIcon />}
+                                    onClick={() => setIsFormExpanded(true)}
+                                    mt={2}
+                                    variant="outline"
+                                >
+                                    Add Connection
+                                </Button>
+                            </Stat>
+                        </CardBody>
+                    </Card>
+                </SimpleGrid>
+
+                {/* Connection Form */}
+                <Collapse in={isFormExpanded || editingConnection !== null} animateOpacity>
+                    <Card
+                        as="form"
+                        onSubmit={handleSubmit}
+                        bg={cardBg}
+                        borderRadius="xl"
+                        boxShadow="md"
+                        overflow="hidden"
+                    >
+                        <CardHeader 
+                            bg={useColorModeValue('blue.50', 'gray.700')}
+                            borderBottom="1px"
+                            borderColor={borderColor}
+                        >
+                            <HStack justify="space-between">
+                                <HStack spacing={3}>
+                                    <Icon 
+                                        as={editingConnection ? EditIcon : AddIcon} 
+                                        color={accentColor}
+                                        boxSize={5}
+                                    />
+                                    <Heading size="md">
+                                        {editingConnection ? 'Edit Connection' : 'Add New Connection'}
+                                    </Heading>
+                                </HStack>
+                                <IconButton
+                                    icon={<CloseIcon />}
+                                    size="sm"
+                                    variant="ghost"
+                                    onClick={() => {
+                                        setIsFormExpanded(false);
+                                        handleCancelEdit();
+                                    }}
+                                    aria-label="Close form"
+                                />
+                            </HStack>
+                        </CardHeader>
+                        <CardBody>
+                            <VStack spacing={5}>
+                                <FormControl isRequired>
+                                    <FormLabel fontSize="sm" fontWeight="medium" display="inline-flex" alignItems="center">
+                                        Connection Name
+                                    </FormLabel>
+                                    <InputGroup>
+                                        <InputLeftElement pointerEvents="none">
+                                            <Icon as={FiDatabase} color={mutedColor} />
+                                        </InputLeftElement>
+                                        <Input
+                                            name="name"
+                                            value={editingConnection ? editingConnection.name : newConnection.name}
+                                            onChange={handleInputChange}
+                                            placeholder="My MongoDB Database"
+                                            size="lg"
+                                            borderRadius="lg"
+                                            focusBorderColor={accentColor}
+                                            autoComplete="off"
+                                        />
+                                    </InputGroup>
+                                    <FormHelperText fontSize="xs">
+                                        A friendly name to identify this connection
+                                    </FormHelperText>
+                                </FormControl>
+
+                                <FormControl isRequired>
+                                    <FormLabel fontSize="sm" fontWeight="medium" display="inline-flex" alignItems="center">
+                                        Connection String
+                                    </FormLabel>
+                                    <Textarea
+                                        name="connectionString"
+                                        value={editingConnection ? editingConnection.connectionString : newConnection.connectionString}
+                                        onChange={handleInputChange}
+                                        placeholder="mongodb://localhost:27017\nor\nmongodb+srv://username:password@cluster.mongodb.net"
+                                        size="lg"
+                                        borderRadius="lg"
+                                        focusBorderColor={accentColor}
+                                        minHeight="100px"
+                                        resize="vertical"
+                                        fontFamily="mono"
+                                        fontSize="sm"
+                                        autoComplete="off"
+                                    />
+                                    <FormHelperText fontSize="xs">
+                                        MongoDB connection URI including authentication. Supports both standard and SRV connection strings.
+                                    </FormHelperText>
+                                </FormControl>
+
+                                <FormControl isRequired>
+                                    <FormLabel fontSize="sm" fontWeight="medium" display="inline-flex" alignItems="center">
+                                        Database Name
+                                    </FormLabel>
+                                    <InputGroup>
+                                        <InputLeftElement pointerEvents="none">
+                                            <Icon as={FiServer} color={mutedColor} />
+                                        </InputLeftElement>
+                                        <Input
+                                            name="databaseName"
+                                            value={editingConnection ? editingConnection.databaseName : newConnection.databaseName}
+                                            onChange={handleInputChange}
+                                            placeholder="myDatabase"
+                                            size="lg"
+                                            borderRadius="lg"
+                                            focusBorderColor={accentColor}
+                                        />
+                                    </InputGroup>
+                                    <FormHelperText fontSize="xs">
+                                        The specific database to connect to
+                                    </FormHelperText>
+                                </FormControl>
+
+                                <Divider />
+
+                                <HStack w="full" justify="flex-end" spacing={3}>
+                                    {editingConnection && (
+                                        <Button 
+                                            onClick={handleCancelEdit} 
+                                            variant="ghost"
+                                            leftIcon={<CloseIcon />}
+                                        >
+                                            Cancel
+                                        </Button>
+                                    )}
+                                    <Button 
+                                        type="submit" 
+                                        colorScheme="blue" 
+                                        isLoading={isLoading}
+                                        loadingText={editingConnection ? 'Updating...' : 'Adding...'}
+                                        leftIcon={editingConnection ? <EditIcon /> : <AddIcon />}
+                                        size="md"
+                                        px={6}
+                                    >
+                                        {editingConnection ? 'Update Connection' : 'Add Connection'}
+                                    </Button>
+                                </HStack>
+                            </VStack>
+                        </CardBody>
+                    </Card>
+                </Collapse>
+
+                {/* Connections List */}
+                {isLoading ? (
+                    <Center py={10}>
+                        <VStack spacing={4}>
+                            <Spinner size="xl" color={accentColor} thickness="4px" />
+                            <Text color={mutedColor}>Loading connections...</Text>
+                        </VStack>
+                    </Center>
+                ) : connections.length > 0 ? (
+                    <Card borderRadius="xl" overflow="hidden" boxShadow="md">
+                        <CardHeader bg={useColorModeValue('gray.50', 'gray.700')}>
+                            <HStack justify="space-between">
+                                <Heading size="md">Your Connections</Heading>
+                                <Badge colorScheme="blue" fontSize="sm" px={3} py={1} borderRadius="full">
+                                    {connections.length} {connections.length === 1 ? 'Connection' : 'Connections'}
+                                </Badge>
+                            </HStack>
+                        </CardHeader>
+                        <CardBody p={0}>
+                            <Box overflowX="auto">
+                                <Table variant="simple" size={isMobile ? 'sm' : 'md'}>
+                                    <Thead bg={tableBg}>
+                                        <Tr>
+                                            <Th>Status</Th>
+                                            <Th>Name</Th>
+                                            <Th>Database</Th>
+                                            <Th>Actions</Th>
+                                        </Tr>
+                                    </Thead>
+                                    <Tbody>
+                                        {connections.map((conn) => (
+                                            <Tr 
+                                                key={conn.id}
+                                                _hover={{ bg: tableHoverBg }}
+                                                transition="background 0.2s"
+                                            >
+                                                <Td>
+                                                    <Tooltip 
+                                                        label={
+                                                            conn.connectionStatus === 'success' 
+                                                                ? `Connection tested successfully${conn.lastTestedAt ? ` at ${new Date(conn.lastTestedAt).toLocaleString()}` : ''}`
+                                                                : conn.connectionStatus === 'error'
+                                                                ? `Connection test failed${conn.lastTestedAt ? ` at ${new Date(conn.lastTestedAt).toLocaleString()}` : ''}`
+                                                                : 'Not tested yet'
+                                                        }
+                                                    >
+                                                        <Badge
+                                                            colorScheme={
+                                                                conn.connectionStatus === 'success' 
+                                                                    ? 'green'
+                                                                    : conn.connectionStatus === 'error'
+                                                                    ? 'red'
+                                                                    : 'gray'
+                                                            }
+                                                            variant="subtle"
+                                                            fontSize="xs"
+                                                        >
+                                                            <Icon 
+                                                                as={
+                                                                    conn.connectionStatus === 'success'
+                                                                        ? FiUnlock
+                                                                        : conn.connectionStatus === 'error'
+                                                                        ? FiLock
+                                                                        : FiActivity
+                                                                }
+                                                                mr={1}
+                                                            />
+                                                            {
+                                                                conn.connectionStatus === 'success'
+                                                                    ? 'Active'
+                                                                    : conn.connectionStatus === 'error'
+                                                                    ? 'Error'
+                                                                    : 'Unknown'
+                                                            }
+                                                        </Badge>
+                                                    </Tooltip>
+                                                </Td>
+                                                <Td>
+                                                    <HStack spacing={2}>
+                                                        <Icon as={FiDatabase} color={accentColor} />
+                                                        <Text fontWeight="medium">{conn.name}</Text>
+                                                    </HStack>
+                                                </Td>
+                                                <Td>
+                                                    <Text color={mutedColor} fontSize="sm">
+                                                        {conn.databaseName}
+                                                    </Text>
+                                                </Td>
+                                                <Td>
+                                                    <HStack spacing={2} wrap="wrap">
+                                                        <Tooltip label="Edit connection" placement="top" hasArrow>
+                                                            <IconButton
+                                                                icon={<EditIcon />}
+                                                                onClick={() => {
+                                                                    handleEdit(conn);
+                                                                    setIsFormExpanded(true);
+                                                                }}
+                                                                size="sm"
+                                                                variant="ghost"
+                                                                colorScheme="blue"
+                                                                aria-label="Edit"
+                                                            />
+                                                        </Tooltip>
+                                                        <Tooltip label="Test connection" placement="top" hasArrow>
+                                                            <IconButton
+                                                                icon={<CheckIcon />}
+                                                                onClick={() => handleTestConnection(conn)}
+                                                                size="sm"
+                                                                variant="ghost"
+                                                                colorScheme="green"
+                                                                aria-label="Test"
+                                                            />
+                                                        </Tooltip>
+                                                        <Tooltip label="View schema" placement="top" hasArrow>
+                                                            <IconButton
+                                                                icon={<ViewIcon />}
+                                                                onClick={() => handleFetchSchema(conn.id)}
+                                                                size="sm"
+                                                                variant="ghost"
+                                                                colorScheme="purple"
+                                                                aria-label="Schema"
+                                                            />
+                                                        </Tooltip>
+                                                        <Tooltip label="Delete connection" placement="top" hasArrow>
+                                                            <IconButton
+                                                                icon={<DeleteIcon />}
+                                                                onClick={() => confirmDelete(conn.id)}
+                                                                size="sm"
+                                                                variant="ghost"
+                                                                colorScheme="red"
+                                                                aria-label="Delete"
+                                                            />
+                                                        </Tooltip>
+                                                    </HStack>
+                                                </Td>
+                                            </Tr>
+                                        ))}
+                                    </Tbody>
+                                </Table>
+                            </Box>
+                        </CardBody>
+                    </Card>
+                ) : (
+                    <Card borderRadius="xl" boxShadow="md">
+                        <CardBody>
+                            <Center py={10}>
+                                <VStack spacing={4}>
+                                    <Icon as={FiDatabase} boxSize={12} color={mutedColor} />
+                                    <VStack spacing={2}>
+                                        <Heading size="md" color={textColor}>
+                                            No Connections Yet
+                                        </Heading>
+                                        <Text color={mutedColor} textAlign="center">
+                                            Add your first MongoDB connection to get started
+                                        </Text>
+                                    </VStack>
+                                    <Button
+                                        colorScheme="blue"
+                                        leftIcon={<AddIcon />}
+                                        onClick={() => setIsFormExpanded(true)}
+                                        size="lg"
+                                    >
+                                        Add Your First Connection
+                                    </Button>
+                                </VStack>
+                            </Center>
+                        </CardBody>
+                    </Card>
+                )}
+
+                {/* Delete Confirmation Dialog */}
+                <AlertDialog
+                    isOpen={isAlertOpen}
+                    leastDestructiveRef={cancelRef}
+                    onClose={() => setIsAlertOpen(false)}
+                    motionPreset="slideInBottom"
+                >
+                    <AlertDialogOverlay backdropFilter="blur(5px)">
+                        <AlertDialogContent borderRadius="xl">
+                            <AlertDialogHeader fontSize="lg" fontWeight="bold">
+                                <HStack spacing={3}>
+                                    <Icon as={WarningIcon} color={warningColor} boxSize={5} />
+                                    <Text>Confirm Delete</Text>
+                                </HStack>
+                            </AlertDialogHeader>
+
+                            <AlertDialogBody>
+                                <VStack align="start" spacing={3}>
+                                    <Text>
+                                        Are you sure you want to delete this connection?
+                                    </Text>
+                                    <Box
+                                        p={3}
+                                        bg={useColorModeValue('red.50', 'red.900')}
+                                        borderRadius="md"
+                                        borderLeft="4px"
+                                        borderColor={errorColor}
+                                    >
+                                        <Text fontSize="sm" fontWeight="medium" color={errorColor}>
+                                            This action cannot be undone
+                                        </Text>
+                                    </Box>
+                                </VStack>
+                            </AlertDialogBody>
+
+                            <AlertDialogFooter>
+                                <Button 
+                                    ref={cancelRef} 
+                                    onClick={() => setIsAlertOpen(false)}
+                                    variant="ghost"
+                                >
+                                    Cancel
+                                </Button>
+                                <Button 
+                                    colorScheme="red" 
+                                    onClick={() => handleDelete(connectionIdToDelete)} 
+                                    ml={3}
+                                    leftIcon={<DeleteIcon />}
+                                >
+                                    Delete Connection
+                                </Button>
+                            </AlertDialogFooter>
+                        </AlertDialogContent>
+                    </AlertDialogOverlay>
+                </AlertDialog>
+
+                {/* Test Connection Modal */}
+                <Modal isOpen={isTestModalOpen} onClose={onCloseTestModal} isCentered>
+                    <ModalOverlay backdropFilter="blur(5px)" />
+                    <ModalContent borderRadius="xl">
+                        <ModalHeader>
+                            <HStack spacing={3}>
+                                <Spinner size="sm" color={accentColor} />
+                                <Text>Testing Connection</Text>
+                            </HStack>
+                        </ModalHeader>
+                        <ModalCloseButton />
+                        <ModalBody>
+                            <VStack spacing={4} align="start">
+                                <HStack spacing={3}>
+                                    <Icon as={FiActivity} color={accentColor} boxSize={5} />
+                                    <Text>
+                                        Testing connection to <Text as="span" fontWeight="bold">
+                                            {testingConnection && testingConnection.name}
+                                        </Text>
+                                    </Text>
+                                </HStack>
+                                <Progress size="xs" isIndeterminate colorScheme="blue" w="full" borderRadius="full" />
+                                <Text fontSize="sm" color={mutedColor}>
+                                    Establishing connection to database...
+                                </Text>
+                            </VStack>
+                        </ModalBody>
+                    </ModalContent>
+                </Modal>
+
+                {/* Schema Viewer Modal */}
+                <Modal
+                    isOpen={isSchemaModalOpen}
+                    onClose={onCloseSchemaModal}
+                    size={modalSize}
+                    scrollBehavior="inside"
+                >
+                    <ModalOverlay backdropFilter="blur(5px)" />
+                    <ModalContent 
+                        borderRadius="xl" 
+                        maxH="90vh"
+                        mx={4}
+                    >
+                        <ModalHeader borderBottom="1px" borderColor={borderColor}>
+                            <HStack spacing={3}>
+                                <Icon as={ViewIcon} color={accentColor} boxSize={5} />
+                                <Text>Database Schema</Text>
+                            </HStack>
+                        </ModalHeader>
+                        <ModalCloseButton />
+                        <ModalBody py={6} overflowY="auto">
+                            <Box 
+                                bg={useColorModeValue('gray.50', 'gray.900')}
+                                p={4}
+                                borderRadius="lg"
+                            >
+                                {schema && (
+                                    <ReactJson
+                                        src={schema}
+                                        theme={useColorModeValue('rjv-default', 'monokai')}
+                                        collapsed={1}
+                                        collapseStringsAfterLength={50}
+                                        enableClipboard={(copy) => {
+                                            let copyText = JSON.stringify(copy.src, null, 2);
+                                            navigator.clipboard.writeText(copyText);
+                                            toast({
+                                                title: 'Copied to clipboard',
+                                                status: 'success',
+                                                duration: 2000,
+                                                isClosable: true,
+                                            });
+                                            return true;
+                                        }}
+                                        displayDataTypes={false}
+                                        displayObjectSize={true}
+                                        style={{
+                                            fontSize: '14px',
+                                            fontFamily: 'Monaco, monospace'
+                                        }}
+                                    />
+                                )}
+                            </Box>
+                        </ModalBody>
+                        <ModalFooter borderTop="1px" borderColor={borderColor}>
+                            <HStack spacing={3}>
+                                <Button 
+                                    leftIcon={<Icon as={FiCopy} />}
+                                    variant="ghost"
+                                    onClick={() => {
+                                        if (schema) {
+                                            navigator.clipboard.writeText(JSON.stringify(schema, null, 2));
+                                            toast({
+                                                title: 'Schema copied to clipboard',
+                                                status: 'success',
+                                                duration: 2000,
+                                                isClosable: true,
+                                            });
+                                        }
+                                    }}
+                                >
+                                    Copy Schema
+                                </Button>
+                                <Button colorScheme="blue" onClick={onCloseSchemaModal}>
+                                    Close
+                                </Button>
+                            </HStack>
+                        </ModalFooter>
+                    </ModalContent>
+                </Modal>
+            </VStack>
+        </Fade>
+    );
+};
+
+export default ConnectionManager;
