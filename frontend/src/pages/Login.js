@@ -4,6 +4,7 @@ import {
     Link as ChakraLink, 
     FormControl, 
     FormLabel, 
+    Select,
     Heading, 
     Input, 
     Text, 
@@ -27,6 +28,7 @@ const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || 'http://localhost:500
 const Login = () => {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
+    const [role, setRole] = useState('user');
     const [isLoading, setIsLoading] = useState(false);
     const [emailError, setEmailError] = useState('');
     const toast = useToast();
@@ -54,7 +56,7 @@ const Login = () => {
         
         setIsLoading(true);
         try {
-            const response = await axios.post(`${API_BASE_URL}/auth/login`, { email, password });
+            const response = await axios.post(`${API_BASE_URL}/auth/login`, { email, password, role });
             const token = response.data.token;
             localStorage.setItem('mongo-token', token);
             toast({
@@ -115,6 +117,14 @@ const Login = () => {
                     </VStack>
 
                     <VStack spacing={5} width="full">
+                        <FormControl isRequired>
+                            <FormLabel fontSize="sm" fontWeight="medium">Login as</FormLabel>
+                            <Select value={role} onChange={(e) => setRole(e.target.value)} size="lg" borderRadius="lg">
+                                <option value="user">User</option>
+                                <option value="admin">Admin</option>
+                            </Select>
+                        </FormControl>
+
                         <FormControl isRequired isInvalid={!!emailError}>
                             <FormLabel fontSize="sm" fontWeight="medium" display="inline-flex" alignItems="center">Email Address</FormLabel>
                             <InputGroup>
